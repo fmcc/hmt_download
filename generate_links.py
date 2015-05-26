@@ -9,7 +9,7 @@ import sys
 
 # All image urls are based on this url - there is also a listing of what is in
 # the archive at this page. 
-base_url = 'http://www.homermultitext.org/hmt-image-archive/E4/E4-Pages/'
+base_url = 'http://www.homermultitext.org/hmt-image-archive/'
 
 def top_mss_data_urls(archive_url):
     """ Construct root urls for the MSS archives. 
@@ -25,34 +25,27 @@ def archive_urls(mss_url):
     mss_page = BeautifulSoup(mss_page.text)
     return [os.path.join(mss_url, link.attrs['href']) for link in mss_page.select('td a')][1:]
 
-def collect_urls(top_url, csv_writer):
-    # The E3-Multispectral directory is massive, and I don't want it just now. 
-    if 'multispectral' in top_url.lower():
+def find_filter_urls(top_url):
+    """ I did have something more complicated here, but really I just want a big list of 
+    all the urls for a MSS for another script to deal with.  """
+    if 'spectral' in top_url:
         return []
-    def tag_file(url):
-        """ Return the url in a tuple with a tag indicating the file type.
-            If another folder, recurse into it. 
-            Apache (or at least the version HMT are using) returns the same 
-            content type for both tiff's and their MD5 hashes. """
-        img_exts = ['.md5','.tiff','.tif', '.jpg', '.jpeg']
-        if url.endswith('.md5'):
-            return ['MD5', url]
-        if any(url.endswith(img_ext) for img_ext in img_exts):
-            return ['IMG', url]
-        # If it is neither md5 or image we need to check the headers. 
-        with contextlib.closing(requests.get(url, stream=True)) as r:
-            content_type = r.headers['content-type']
-        if content_type.startswith('text/html'):
-            # i.e. is another directory. 
-            return collect_urls(url, csv_writer)
-        else:
-            return ['OTHER', url]
-
+    img_exts = ['.md5','.tiff','.tif', '.jpg', '.jpeg']
+    urls = []
     for url in archive_urls(top_url):
-        csv_writer.writerow(tag_file(url))
-    return
+        if any(url.endswith(img_ext) for img_ext in img_exts):
+            urls.append(url) 
+        else:
+            with contextlib.closing(requests.get(url, stream=True)) as r:
+                content_type = r.headers['content-type']
+            if content_type.startswith('text/html'):
+                urls.extend(find_filter_urls(url))
+            else:
+                pass
+    return urls
 
-file_out = sys.argv[1]
-with open(file_out, 'w') as csv_out:
-    for url in top_mss_data_urls(base_url):
-        collect_urls(url, csv.writer(csv_out))
+with open('all_links.txt', 'a') as links_out:
+    for MSS in top_mss_data_urls(base_url):
+        for url in find_filter_urls(MSS):
+            links_out.write('%s\n' %url)
+        
